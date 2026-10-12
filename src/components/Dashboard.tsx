@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Snapshot } from "@/lib/types";
 import { formatCurrency, formatNumber, formatPercent, formatDate } from "@/lib/format";
@@ -65,7 +66,12 @@ export function Dashboard({ snapshot }: { snapshot: Snapshot }) {
               : "لسه معملتش أول مزامنة بيانات"}
           </p>
         </div>
-        <DateRangePicker value={preset} onChange={setPreset} />
+        <div className="flex items-center gap-4">
+          <Link href="/bosta" className="text-sm underline" style={{ color: "var(--text-secondary)" }}>
+            حساب بوسطة ←
+          </Link>
+          <DateRangePicker value={preset} onChange={setPreset} />
+        </div>
       </header>
 
       <section className="flex flex-wrap gap-3">

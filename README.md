@@ -29,6 +29,15 @@ variables → Actions):**
 
 وفعّل GitHub Pages من Settings → Pages → Source: GitHub Actions.
 
+### صفحة حساب بوسطة (`/bosta`)
+
+لو `BOSTA_API_KEY` موجود، الـ sync بيسحب كل شحنات الحساب (مش بس اللي ليها
+أوردر على شوبيفاي) ويعرض في صفحة `/bosta` الوضع الحالي للحساب: إجمالي الشحنات،
+نسبة التسليم الناجح، الشحنات المفتوحة والمتأخرة (أقدم من 7 أيام)، الشحنات اللي
+فيها مشكلة ومحتاجة تدخل، فلوس الـ COD (اتحصّل / في الطريق / ضاع في المرتجع)،
+مصاريف الشحن، أداء كل مدينة، ومنحنى أسبوعي للتسليم مقابل المرتجع. الصفحة دي
+بتشتغل حتى لو بيانات شوبيفاي مش متضافة.
+
 ---
 
 ## Architecture
@@ -50,6 +59,10 @@ Google Sheet (opt.)─┘         ▲
   once, log a raw response for one tracking number, and adjust
   `extractRawState` / `normalizeBostaState` in that file if the field names
   differ — they're intentionally isolated there as the one place to fix.
+  It also lists every delivery on the account (`fetchBostaDeliveries`, via
+  `POST /deliveries/search` with a fallback to `GET /deliveries`), maps
+  Bosta's numeric state codes to buckets, and builds the account summary
+  shown on `/bosta` (`buildBostaAccountSummary`).
 - `src/lib/sheets.ts` — reads the "Refunds/Instapay/C. S." Google Sheet via
   the Sheets API (service account auth) and classifies each row's messy
   free-text notes (Arabic/English, e.g. "Cancel", "Faild", "منتظرين رد منها")

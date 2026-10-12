@@ -3,10 +3,23 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { fetchShopifyOrders } from "../src/lib/shopify";
-import { fetchBostaShipments, isBostaConfigured } from "../src/lib/bosta";
+import {
+  buildBostaAccountSummary,
+  fetchBostaDeliveries,
+  fetchBostaShipments,
+  isBostaConfigured,
+  toShipmentSummary,
+} from "../src/lib/bosta";
 import { fetchInstapayRows } from "../src/lib/sheets";
 import { buildDailyMetrics } from "../src/lib/metrics";
-import type { BostaShipmentSummary, DailyMetrics, InstapayRow, Snapshot } from "../src/lib/types";
+import type {
+  BostaAccountSummary,
+  BostaShipmentSummary,
+  DailyMetrics,
+  InstapayRow,
+  ShopifyOrderSummary,
+  Snapshot,
+} from "../src/lib/types";
 
 const DATA_DIR = path.join(process.cwd(), "data");
 const LATEST_PATH = path.join(DATA_DIR, "latest.json");
@@ -43,21 +56,40 @@ async function main() {
   since.setDate(since.getDate() - LOOKBACK_DAYS);
   const sinceISO = since.toISOString().slice(0, 10);
 
-  console.log(`Fetching Shopify orders since ${sinceISO}...`);
-  const orders = await fetchShopifyOrders(sinceISO);
-  console.log(`Fetched ${orders.length} orders.`);
+  let orders: ShopifyOrderSummary[] = [];
+  if (process.env.SHOPIFY_SHOP && process.env.SHOPIFY_ADMIN_ACCESS_TOKEN) {
+    console.log(`Fetching Shopify orders since ${sinceISO}...`);
+    orders = await fetchShopifyOrders(sinceISO);
+    console.log(`Fetched ${orders.length} orders.`);
+  } else {
+    console.log("Shopify credentials not set — skipping orders (daily metrics will be empty).");
+  }
 
   let bostaShipments: BostaShipmentSummary[] = [];
+  let bostaAccount: BostaAccountSummary | null = null;
   if (isBostaConfigured()) {
-    const trackingNumbers = Array.from(
+    try {
+      console.log(`Fetching Bosta deliveries since ${sinceISO}...`);
+      const deliveries = await fetchBostaDeliveries(sinceISO);
+      console.log(`Fetched ${deliveries.length} Bosta deliveries.`);
+      bostaAccount = buildBostaAccountSummary(deliveries, sinceISO);
+      bostaShipments = deliveries.map(toShipmentSummary);
+    } catch (err) {
+      console.warn("Bosta delivery listing failed:", (err as Error).message);
+    }
+
+    const known = new Set(bostaShipments.map((s) => s.trackingNumber));
+    const missing = Array.from(
       new Set(
         orders
           .filter((o) => o.trackingCompany?.toLowerCase().includes("bosta") && o.trackingNumber)
           .map((o) => o.trackingNumber as string),
       ),
-    );
-    console.log(`Fetching Bosta state for ${trackingNumbers.length} shipments...`);
-    bostaShipments = await fetchBostaShipments(trackingNumbers);
+    ).filter((t) => !known.has(t));
+    if (missing.length) {
+      console.log(`Looking up ${missing.length} Shopify-tracked shipments not in the Bosta list...`);
+      bostaShipments.push(...(await fetchBostaShipments(missing)));
+    }
   } else {
     console.log("BOSTA_API_KEY not set — falling back to Shopify fulfillment status for shipping state.");
   }
@@ -85,6 +117,7 @@ async function main() {
       instapayRows: instapayRows.length,
     },
     days: mergedDays,
+    bosta: bostaAccount ?? existing?.bosta ?? null,
   };
 
   await mkdir(DATA_DIR, { recursive: true });
